@@ -626,6 +626,7 @@ static void print_preparing_worktree_line(int detach,
  * Returns 0 on failure and non-zero on success.
  */
 static int first_valid_ref(const char *refname UNUSED,
+			   const char *referent UNUSED,
 			   const struct object_id *oid UNUSED,
 			   int flags UNUSED,
 			   void *cb_data UNUSED)
@@ -769,7 +770,7 @@ static int add(int ac, const char **av, const char *prefix)
 	char *branch_to_free = NULL;
 	char *new_branch_to_free = NULL;
 	const char *new_branch = NULL;
-	const char *opt_track = NULL;
+	char *opt_track = NULL;
 	const char *lock_reason = NULL;
 	int keep_locked = 0;
 	int used_new_branch_options;
@@ -846,7 +847,7 @@ static int add(int ac, const char **av, const char *prefix)
 	if (opts.orphan && !new_branch) {
 		int n;
 		const char *s = worktree_basename(path, &n);
-		new_branch = xstrndup(s, n);
+		new_branch = new_branch_to_free = xstrndup(s, n);
 	} else if (opts.orphan) {
 		; /* no-op */
 	} else if (opts.detach) {
@@ -875,7 +876,7 @@ static int add(int ac, const char **av, const char *prefix)
 			remote = unique_tracking_name(branch, &oid, NULL);
 			if (remote) {
 				new_branch = branch;
-				branch = remote;
+				branch = new_branch_to_free = remote;
 			}
 		}
 
@@ -923,6 +924,7 @@ static int add(int ac, const char **av, const char *prefix)
 
 	ret = add_worktree(path, branch, &opts);
 	free(path);
+	free(opt_track);
 	free(branch_to_free);
 	free(new_branch_to_free);
 	return ret;
