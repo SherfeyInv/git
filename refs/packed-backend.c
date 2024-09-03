@@ -1,3 +1,5 @@
+#define USE_THE_REPOSITORY_VARIABLE
+
 #include "../git-compat-util.h"
 #include "../config.h"
 #include "../dir.h"
@@ -1733,8 +1735,8 @@ static struct ref_iterator *packed_reflog_iterator_begin(struct ref_store *ref_s
 	return empty_ref_iterator_begin();
 }
 
-static int packed_fsck(struct ref_store *ref_store,
-		       struct fsck_options *o)
+static int packed_fsck(struct ref_store *ref_store UNUSED,
+		       struct fsck_options *o UNUSED)
 {
 	return 0;
 }
