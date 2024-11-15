@@ -31,7 +31,7 @@
 
 struct cmd_struct {
 	const char *cmd;
-	int (*fn)(int, const char **, const char *);
+	int (*fn)(int, const char **, const char *, struct repository *);
 	unsigned int option;
 };
 
@@ -441,9 +441,10 @@ static int handle_alias(int *argcp, const char ***argv)
 	return ret;
 }
 
-static int run_builtin(struct cmd_struct *p, int argc, const char **argv)
+static int run_builtin(struct cmd_struct *p, int argc, const char **argv, struct repository *repo)
 {
 	int status, help;
+	int no_repo = 1;
 	struct stat st;
 	const char *prefix;
 	int run_setup = (p->option & (RUN_SETUP | RUN_SETUP_GENTLY));
@@ -455,9 +456,9 @@ static int run_builtin(struct cmd_struct *p, int argc, const char **argv)
 
 	if (run_setup & RUN_SETUP) {
 		prefix = setup_git_directory();
+		no_repo = 0;
 	} else if (run_setup & RUN_SETUP_GENTLY) {
-		int nongit_ok;
-		prefix = setup_git_directory_gently(&nongit_ok);
+		prefix = setup_git_directory_gently(&no_repo);
 	} else {
 		prefix = NULL;
 	}
@@ -479,9 +480,9 @@ static int run_builtin(struct cmd_struct *p, int argc, const char **argv)
 	trace_argv_printf(argv, "trace: built-in: git");
 	trace2_cmd_name(p->cmd);
 
-	validate_cache_entries(the_repository->index);
-	status = p->fn(argc, argv, prefix);
-	validate_cache_entries(the_repository->index);
+	validate_cache_entries(repo->index);
+	status = p->fn(argc, argv, prefix, no_repo ? NULL : repo);
+	validate_cache_entries(repo->index);
 
 	if (status)
 		return status;
@@ -711,6 +712,7 @@ static void strip_extension(const char **argv)
 static void handle_builtin(int argc, const char **argv)
 {
 	struct strvec args = STRVEC_INIT;
+	const char **argv_copy = NULL;
 	const char *cmd;
 	struct cmd_struct *builtin;
 
@@ -731,13 +733,28 @@ static void handle_builtin(int argc, const char **argv)
 		}
 
 		argc++;
-		argv = args.v;
+
+		/*
+		 * `run_builtin()` will modify the argv array, so we need to
+		 * create a shallow copy such that we can free all of its
+		 * strings.
+		 */
+		CALLOC_ARRAY(argv_copy, argc + 1);
+		COPY_ARRAY(argv_copy, args.v, argc);
+
+		argv = argv_copy;
 	}
 
 	builtin = get_builtin(cmd);
-	if (builtin)
-		exit(run_builtin(builtin, argc, argv));
+	if (builtin) {
+		int ret = run_builtin(builtin, argc, argv, the_repository);
+		strvec_clear(&args);
+		free(argv_copy);
+		exit(ret);
+	}
+
 	strvec_clear(&args);
+	free(argv_copy);
 }
 
 static void execv_dashed_external(const char **argv)

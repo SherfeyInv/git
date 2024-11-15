@@ -2,6 +2,7 @@
 
 test_description='exercise basic bitmap functionality'
 
+TEST_PASSES_SANITIZE_LEAK=true
 . ./test-lib.sh
 . "$TEST_DIRECTORY"/lib-bitmap.sh
 
@@ -500,6 +501,18 @@ test_expect_success 'boundary-based traversal is used when requested' '
 		grep "\"region_enter\".*\"label\":\"haves/classic\"" perf ||
 			return 1
 	done
+'
+
+test_expect_success 'left-right not confused by bitmap index' '
+	git rev-list --left-right other...HEAD >expect &&
+	git rev-list --use-bitmap-index --left-right other...HEAD >actual &&
+	test_cmp expect actual
+'
+
+test_expect_success 'left-right count not confused by bitmap-index' '
+	git rev-list --left-right --count other...HEAD >expect &&
+	git rev-list --use-bitmap-index --left-right --count other...HEAD >actual &&
+	test_cmp expect actual
 '
 
 test_bitmap_cases "pack.writeBitmapLookupTable"

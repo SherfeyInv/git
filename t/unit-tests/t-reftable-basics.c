@@ -54,7 +54,7 @@ int cmd_main(int argc UNUSED, const char *argv[] UNUSED)
 		}
 	}
 
-	if_test ("names_length retuns size of a NULL-terminated string array") {
+	if_test ("names_length returns size of a NULL-terminated string array") {
 		const char *a[] = { "a", "b", NULL };
 		check_int(names_length(a), ==, 2);
 	}
@@ -72,13 +72,14 @@ int cmd_main(int argc UNUSED, const char *argv[] UNUSED)
 	if_test ("parse_names works for basic input") {
 		char in1[] = "line\n";
 		char in2[] = "a\nb\nc";
-		char **out = NULL;
-		parse_names(in1, strlen(in1), &out);
+		char **out = parse_names(in1, strlen(in1));
+		check(out != NULL);
 		check_str(out[0], "line");
 		check(!out[1]);
 		free_names(out);
 
-		parse_names(in2, strlen(in2), &out);
+		out = parse_names(in2, strlen(in2));
+		check(out != NULL);
 		check_str(out[0], "a");
 		check_str(out[1], "b");
 		check_str(out[2], "c");
@@ -88,8 +89,8 @@ int cmd_main(int argc UNUSED, const char *argv[] UNUSED)
 
 	if_test ("parse_names drops empty string") {
 		char in[] = "a\n\nb\n";
-		char **out = NULL;
-		parse_names(in, strlen(in), &out);
+		char **out = parse_names(in, strlen(in));
+		check(out != NULL);
 		check_str(out[0], "a");
 		/* simply '\n' should be dropped as empty string */
 		check_str(out[1], "b");
@@ -98,8 +99,8 @@ int cmd_main(int argc UNUSED, const char *argv[] UNUSED)
 	}
 
 	if_test ("common_prefix_size works") {
-		struct strbuf a = STRBUF_INIT;
-		struct strbuf b = STRBUF_INIT;
+		struct reftable_buf a = REFTABLE_BUF_INIT;
+		struct reftable_buf b = REFTABLE_BUF_INIT;
 		struct {
 			const char *a, *b;
 			int want;
@@ -112,14 +113,14 @@ int cmd_main(int argc UNUSED, const char *argv[] UNUSED)
 		};
 
 		for (size_t i = 0; i < ARRAY_SIZE(cases); i++) {
-			strbuf_addstr(&a, cases[i].a);
-			strbuf_addstr(&b, cases[i].b);
+			check(!reftable_buf_addstr(&a, cases[i].a));
+			check(!reftable_buf_addstr(&b, cases[i].b));
 			check_int(common_prefix_size(&a, &b), ==, cases[i].want);
-			strbuf_reset(&a);
-			strbuf_reset(&b);
+			reftable_buf_reset(&a);
+			reftable_buf_reset(&b);
 		}
-		strbuf_release(&a);
-		strbuf_release(&b);
+		reftable_buf_release(&a);
+		reftable_buf_release(&b);
 	}
 
 	if_test ("put_be24 and get_be24 work") {

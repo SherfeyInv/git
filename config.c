@@ -6,6 +6,8 @@
  *
  */
 
+#define USE_THE_REPOSITORY_VARIABLE
+
 #include "git-compat-util.h"
 #include "abspath.h"
 #include "advice.h"
@@ -304,13 +306,16 @@ static int include_by_branch(struct config_include_data *data,
 	int flags;
 	int ret;
 	struct strbuf pattern = STRBUF_INIT;
-	const char *refname = (!data->repo || !data->repo->gitdir) ?
-		NULL : refs_resolve_ref_unsafe(get_main_ref_store(data->repo),
-					       "HEAD", 0, NULL, &flags);
-	const char *shortname;
+	const char *refname, *shortname;
 
-	if (!refname || !(flags & REF_ISSYMREF)	||
-			!skip_prefix(refname, "refs/heads/", &shortname))
+	if (!data->repo || data->repo->ref_storage_format == REF_STORAGE_FORMAT_UNKNOWN)
+		return 0;
+
+	refname = refs_resolve_ref_unsafe(get_main_ref_store(data->repo),
+					  "HEAD", 0, NULL, &flags);
+	if (!refname ||
+	    !(flags & REF_ISSYMREF) ||
+	    !skip_prefix(refname, "refs/heads/", &shortname))
 		return 0;
 
 	strbuf_add(&pattern, cond, cond_len);
@@ -1445,26 +1450,6 @@ static int git_default_core_config(const char *var, const char *value,
 		return 0;
 	}
 
-	if (!strcmp(var, "core.prefersymlinkrefs")) {
-		prefer_symlink_refs = git_config_bool(var, value);
-		return 0;
-	}
-
-	if (!strcmp(var, "core.logallrefupdates")) {
-		if (value && !strcasecmp(value, "always"))
-			log_all_ref_updates = LOG_REFS_ALWAYS;
-		else if (git_config_bool(var, value))
-			log_all_ref_updates = LOG_REFS_NORMAL;
-		else
-			log_all_ref_updates = LOG_REFS_NONE;
-		return 0;
-	}
-
-	if (!strcmp(var, "core.warnambiguousrefs")) {
-		warn_ambiguous_refs = git_config_bool(var, value);
-		return 0;
-	}
-
 	if (!strcmp(var, "core.abbrev")) {
 		if (!value)
 			return config_error_nonbool(var);
@@ -1571,14 +1556,6 @@ static int git_default_core_config(const char *var, const char *value,
 	if (!strcmp(var, "core.checkroundtripencoding")) {
 		FREE_AND_NULL(check_roundtrip_encoding);
 		return git_config_string(&check_roundtrip_encoding, var, value);
-	}
-
-	if (!strcmp(var, "core.notesref")) {
-		if (!value)
-			return config_error_nonbool(var);
-		free(notes_ref_name);
-		notes_ref_name = xstrdup(value);
-		return 0;
 	}
 
 	if (!strcmp(var, "core.editor")) {
@@ -2202,7 +2179,7 @@ static void configset_iter(struct config_set *set, config_fn_t fn, void *data)
 	}
 }
 
-void read_early_config(config_fn_t cb, void *data)
+void read_early_config(struct repository *repo, config_fn_t cb, void *data)
 {
 	struct config_options opts = {0};
 	struct strbuf commondir = STRBUF_INIT;
@@ -2210,9 +2187,9 @@ void read_early_config(config_fn_t cb, void *data)
 
 	opts.respect_includes = 1;
 
-	if (have_git_dir()) {
-		opts.commondir = get_git_common_dir();
-		opts.git_dir = get_git_dir();
+	if (repo && repo->gitdir) {
+		opts.commondir = repo_get_common_dir(repo);
+		opts.git_dir = repo_get_git_dir(repo);
 	/*
 	 * When setup_git_directory() was not yet asked to discover the
 	 * GIT_DIR, we ask discover_git_directory() to figure out whether there
@@ -2232,10 +2209,6 @@ void read_early_config(config_fn_t cb, void *data)
 	strbuf_release(&gitdir);
 }
 
-/*
- * Read config but only enumerate system and global settings.
- * Omit any repo-local, worktree-local, or command-line settings.
- */
 void read_very_early_config(config_fn_t cb, void *data)
 {
 	struct config_options opts = { 0 };

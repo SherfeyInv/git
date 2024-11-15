@@ -1,3 +1,4 @@
+#define USE_THE_REPOSITORY_VARIABLE
 #include "builtin.h"
 #include "gettext.h"
 #include "hex.h"
@@ -37,7 +38,10 @@ static int tail_match(const struct strvec *pattern, const char *path)
 	return 0;
 }
 
-int cmd_ls_remote(int argc, const char **argv, const char *prefix)
+int cmd_ls_remote(int argc,
+		  const char **argv,
+		  const char *prefix,
+		  struct repository *repo UNUSED)
 {
 	const char *dest = NULL;
 	unsigned flags = 0;
@@ -162,6 +166,7 @@ int cmd_ls_remote(int argc, const char **argv, const char *prefix)
 		status = 0; /* we found something */
 	}
 
+	string_list_clear(&server_options, 0);
 	ref_sorting_release(sorting);
 	ref_array_clear(&ref_array);
 	if (transport_disconnect(transport))
@@ -169,5 +174,6 @@ int cmd_ls_remote(int argc, const char **argv, const char *prefix)
 	transport_ls_refs_options_release(&transport_options);
 
 	strvec_clear(&pattern);
+	string_list_clear(&server_options, 0);
 	return status;
 }

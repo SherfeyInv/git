@@ -8,6 +8,7 @@ test_description='Test remote-helper import and export commands'
 GIT_TEST_DEFAULT_INITIAL_BRANCH_NAME=main
 export GIT_TEST_DEFAULT_INITIAL_BRANCH_NAME
 
+TEST_PASSES_SANITIZE_LEAK=true
 . ./test-lib.sh
 . "$TEST_DIRECTORY"/lib-gpg.sh
 
@@ -342,6 +343,17 @@ test_expect_success 'fetch tag' '
 	 git fetch
 	) &&
 	compare_refs local v1.0 server v1.0
+'
+
+test_expect_success 'totally broken helper reports failure message' '
+	write_script git-remote-broken <<-\EOF &&
+	read cap_cmd
+	exit 1
+	EOF
+	test_must_fail \
+		env PATH="$PWD:$PATH" \
+		git clone broken://example.com/foo.git 2>stderr &&
+	grep aborted stderr
 '
 
 test_done

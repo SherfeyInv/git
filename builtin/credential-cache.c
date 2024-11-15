@@ -30,7 +30,7 @@ static int connection_fatally_broken(int error)
 
 static int connection_closed(int error)
 {
-	return (error == ECONNRESET);
+	return error == ECONNRESET || error == ECONNABORTED;
 }
 
 static int connection_fatally_broken(int error)
@@ -137,7 +137,10 @@ static void announce_capabilities(void)
 	credential_announce_capabilities(&c, stdout);
 }
 
-int cmd_credential_cache(int argc, const char **argv, const char *prefix)
+int cmd_credential_cache(int argc,
+			 const char **argv,
+			 const char *prefix,
+			 struct repository *repo UNUSED)
 {
 	const char *socket_path_arg = NULL;
 	char *socket_path;
@@ -186,7 +189,8 @@ int cmd_credential_cache(int argc, const char **argv, const char *prefix)
 
 #else
 
-int cmd_credential_cache(int argc, const char **argv, const char *prefix)
+int cmd_credential_cache(int argc, const char **argv, const char *prefix,
+			 struct repository *repo UNUSED)
 {
 	const char * const usage[] = {
 		"git credential-cache [options] <action>",

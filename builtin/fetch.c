@@ -1,13 +1,13 @@
 /*
  * "git fetch"
  */
+#define USE_THE_REPOSITORY_VARIABLE
 #include "builtin.h"
 #include "advice.h"
 #include "config.h"
 #include "gettext.h"
 #include "environment.h"
 #include "hex.h"
-#include "repository.h"
 #include "refs.h"
 #include "refspec.h"
 #include "object-name.h"
@@ -456,6 +456,7 @@ static void filter_prefetch_refspec(struct refspec *rs)
 
 			free(rs->items[i].src);
 			free(rs->items[i].dst);
+			free(rs->raw[i]);
 
 			for (j = i + 1; j < rs->nr; j++) {
 				rs->items[j - 1] = rs->items[j];
@@ -1161,7 +1162,7 @@ static int store_updated_refs(struct display_state *display_state,
 		opt.exclude_hidden_refs_section = "fetch";
 		rm = ref_map;
 		if (check_connected(iterate_ref_map, &rm, &opt)) {
-			rc = error(_("%s did not send all necessary objects\n"),
+			rc = error(_("%s did not send all necessary objects"),
 				   display_state->url);
 			goto abort;
 		}
@@ -1458,7 +1459,7 @@ static void set_option(struct transport *transport, const char *name, const char
 		die(_("option \"%s\" value \"%s\" is not valid for %s"),
 		    name, value, transport->url);
 	if (r > 0)
-		warning(_("option \"%s\" is ignored for %s\n"),
+		warning(_("option \"%s\" is ignored for %s"),
 			name, transport->url);
 }
 
@@ -1980,6 +1981,8 @@ static int fetch_multiple(struct string_list *list, int max_children,
 	strvec_pushl(&argv, "-c", "fetch.bundleURI=",
 		     "fetch", "--append", "--no-auto-gc",
 		     "--no-write-commit-graph", NULL);
+	for (i = 0; i < server_options.nr; i++)
+		strvec_pushf(&argv, "--server-option=%s", server_options.items[i].string);
 	add_options_to_argv(&argv, config);
 
 	if (max_children != 1 && list->nr != 1) {
@@ -2138,7 +2141,10 @@ static int fetch_one(struct remote *remote, int argc, const char **argv,
 	return exit_code;
 }
 
-int cmd_fetch(int argc, const char **argv, const char *prefix)
+int cmd_fetch(int argc,
+	      const char **argv,
+	      const char *prefix,
+	      struct repository *repo UNUSED)
 {
 	struct fetch_config config = {
 		.display_format = DISPLAY_FORMAT_FULL,
@@ -2210,8 +2216,8 @@ int cmd_fetch(int argc, const char **argv, const char *prefix)
 			   N_("deepen history of shallow clone")),
 		OPT_STRING(0, "shallow-since", &deepen_since, N_("time"),
 			   N_("deepen history of shallow repository based on time")),
-		OPT_STRING_LIST(0, "shallow-exclude", &deepen_not, N_("revision"),
-				N_("deepen history of shallow clone, excluding rev")),
+		OPT_STRING_LIST(0, "shallow-exclude", &deepen_not, N_("ref"),
+				N_("deepen history of shallow clone, excluding ref")),
 		OPT_INTEGER(0, "deepen", &deepen_relative,
 			    N_("deepen history of shallow clone")),
 		OPT_SET_INT_F(0, "unshallow", &unshallow,

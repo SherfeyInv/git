@@ -334,6 +334,9 @@ static struct ref *handshake(struct transport *transport, int for_push,
 	data->version = discover_version(&reader);
 	switch (data->version) {
 	case protocol_v2:
+		if ((!transport->server_options || !transport->server_options->nr) &&
+		    transport->remote->server_options.nr)
+			transport->server_options = &transport->remote->server_options;
 		if (server_feature_v2("session-id", &server_sid))
 			trace2_data_string("transfer", NULL, "server-sid", server_sid);
 		if (must_list_refs)
@@ -414,7 +417,7 @@ static int fetch_refs_via_pack(struct transport *transport,
 	struct git_transport_data *data = transport->data;
 	struct ref *refs = NULL;
 	struct fetch_pack_args args;
-	struct ref *refs_tmp = NULL;
+	struct ref *refs_tmp = NULL, **to_fetch_dup = NULL;
 
 	memset(&args, 0, sizeof(args));
 	args.uploadpack = data->options.uploadpack;
@@ -477,6 +480,14 @@ static int fetch_refs_via_pack(struct transport *transport,
 		goto cleanup;
 	}
 
+	/*
+	 * Create a shallow copy of `sought` so that we can free all of its entries.
+	 * This is because `fetch_pack()` will modify the array to evict some
+	 * entries, but won't free those.
+	 */
+	DUP_ARRAY(to_fetch_dup, to_fetch, nr_heads);
+	to_fetch = to_fetch_dup;
+
 	refs = fetch_pack(&args, data->fd,
 			  refs_tmp ? refs_tmp : transport->remote_refs,
 			  to_fetch, nr_heads, &data->shallow,
@@ -500,6 +511,7 @@ cleanup:
 		ret = -1;
 	data->conn = NULL;
 
+	free(to_fetch_dup);
 	free_refs(refs_tmp);
 	free_refs(refs);
 	list_objects_filter_release(&args.filter_options);
@@ -1097,6 +1109,18 @@ int is_transport_allowed(const char *type, int from_user)
 	}
 
 	BUG("invalid protocol_allow_config type");
+}
+
+int parse_transport_option(const char *var, const char *value,
+			   struct string_list *transport_options)
+{
+	if (!value)
+		return config_error_nonbool(var);
+	if (!*value)
+		string_list_clear(transport_options, 0);
+	else
+		string_list_append(transport_options, value);
+	return 0;
 }
 
 void transport_check_allowed(const char *type)

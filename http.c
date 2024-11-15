@@ -19,6 +19,7 @@
 #include "string-list.h"
 #include "object-file.h"
 #include "object-store-ll.h"
+#include "tempfile.h"
 
 static struct trace_key trace_curl = TRACE_KEY_INIT(CURL);
 static int trace_curl_data = 1;
@@ -800,6 +801,7 @@ static int redact_sensitive_header(struct strbuf *header, size_t offset)
 
 		strbuf_setlen(header, sensitive_header - header->buf);
 		strbuf_addbuf(header, &redacted_header);
+		strbuf_release(&redacted_header);
 		ret = 1;
 	}
 	return ret;
@@ -1707,7 +1709,7 @@ void run_active_slot(struct active_request_slot *slot)
 	 * The value of slot->finished we set before the loop was used
 	 * to set our "finished" variable when our request completed.
 	 *
-	 * 1. The slot may not have been reused for another requst
+	 * 1. The slot may not have been reused for another request
 	 *    yet, in which case it still has &finished.
 	 *
 	 * 2. The slot may already be in-use to serve another request,
@@ -2289,17 +2291,19 @@ static int http_request_reauth(const char *url,
 		case HTTP_REQUEST_STRBUF:
 			strbuf_reset(result);
 			break;
-		case HTTP_REQUEST_FILE:
-			if (fflush(result)) {
+		case HTTP_REQUEST_FILE: {
+			FILE *f = result;
+			if (fflush(f)) {
 				error_errno("unable to flush a file");
 				return HTTP_START_FAILED;
 			}
-			rewind(result);
-			if (ftruncate(fileno(result), 0) < 0) {
+			rewind(f);
+			if (ftruncate(fileno(f), 0) < 0) {
 				error_errno("unable to truncate a file");
 				return HTTP_START_FAILED;
 			}
 			break;
+		}
 		default:
 			BUG("Unknown http_request target");
 		}
@@ -2387,8 +2391,24 @@ static char *fetch_pack_index(unsigned char *hash, const char *base_url)
 	strbuf_addf(&buf, "objects/pack/pack-%s.idx", hash_to_hex(hash));
 	url = strbuf_detach(&buf, NULL);
 
-	strbuf_addf(&buf, "%s.temp", sha1_pack_index_name(hash));
-	tmp = strbuf_detach(&buf, NULL);
+	/*
+	 * Don't put this into packs/, since it's just temporary and we don't
+	 * want to confuse it with our local .idx files.  We'll generate our
+	 * own index if we choose to download the matching packfile.
+	 *
+	 * It's tempting to use xmks_tempfile() here, but it's important that
+	 * the file not exist, otherwise http_get_file() complains. So we
+	 * create a filename that should be unique, and then just register it
+	 * as a tempfile so that it will get cleaned up on exit.
+	 *
+	 * In theory we could hold on to the tempfile and delete these as soon
+	 * as we download the matching pack, but it would take a bit of
+	 * refactoring. Leaving them until the process ends is probably OK.
+	 */
+	tmp = xstrfmt("%s/tmp_pack_%s.idx",
+		      repo_get_object_directory(the_repository),
+		      hash_to_hex(hash));
+	register_tempfile(tmp);
 
 	if (http_get_file(url, tmp, NULL) != HTTP_OK) {
 		error("Unable to get pack index %s", url);
@@ -2402,15 +2422,17 @@ static char *fetch_pack_index(unsigned char *hash, const char *base_url)
 static int fetch_and_setup_pack_index(struct packed_git **packs_head,
 	unsigned char *sha1, const char *base_url)
 {
-	struct packed_git *new_pack;
+	struct packed_git *new_pack, *p;
 	char *tmp_idx = NULL;
 	int ret;
 
-	if (has_pack_index(sha1)) {
-		new_pack = parse_pack_index(sha1, sha1_pack_index_name(sha1));
-		if (!new_pack)
-			return -1; /* parse_pack_index() already issued error message */
-		goto add_pack;
+	/*
+	 * If we already have the pack locally, no need to fetch its index or
+	 * even add it to list; we already have all of its objects.
+	 */
+	for (p = get_all_packs(the_repository); p; p = p->next) {
+		if (hasheq(p->hash, sha1, the_repository->hash_algo))
+			return 0;
 	}
 
 	tmp_idx = fetch_pack_index(sha1, base_url);
@@ -2426,15 +2448,12 @@ static int fetch_and_setup_pack_index(struct packed_git **packs_head,
 	}
 
 	ret = verify_pack_index(new_pack);
-	if (!ret) {
+	if (!ret)
 		close_pack_index(new_pack);
-		ret = finalize_object_file(tmp_idx, sha1_pack_index_name(sha1));
-	}
 	free(tmp_idx);
 	if (ret)
 		return -1;
 
-add_pack:
 	new_pack->next = *packs_head;
 	*packs_head = new_pack;
 	return 0;
@@ -2474,6 +2493,7 @@ int http_get_info_packs(const char *base_url, struct packed_git **packs_head)
 
 cleanup:
 	free(url);
+	strbuf_release(&buf);
 	return ret;
 }
 
@@ -2561,7 +2581,8 @@ struct http_pack_request *new_direct_http_pack_request(
 
 	preq->url = url;
 
-	strbuf_addf(&preq->tmpfile, "%s.temp", sha1_pack_name(packed_git_hash));
+	odb_pack_name(&preq->tmpfile, packed_git_hash, "pack");
+	strbuf_addstr(&preq->tmpfile, ".temp");
 	preq->packfile = fopen(preq->tmpfile.buf, "a");
 	if (!preq->packfile) {
 		error("Unable to open local file %s for pack",
@@ -2725,6 +2746,7 @@ struct http_object_request *new_http_object_request(const char *base_url,
 	 * file; also rewind to the beginning of the local file.
 	 */
 	if (prev_read == -1) {
+		git_inflate_end(&freq->stream);
 		memset(&freq->stream, 0, sizeof(freq->stream));
 		git_inflate_init(&freq->stream);
 		the_hash_algo->init_fn(&freq->c);
@@ -2798,7 +2820,6 @@ int finish_http_object_request(struct http_object_request *freq)
 		return -1;
 	}
 
-	git_inflate_end(&freq->stream);
 	the_hash_algo->final_oid_fn(&freq->real_oid, &freq->c);
 	if (freq->zret != Z_STREAM_END) {
 		unlink_or_warn(freq->tmpfile.buf);
@@ -2815,15 +2836,17 @@ int finish_http_object_request(struct http_object_request *freq)
 	return freq->rename;
 }
 
-void abort_http_object_request(struct http_object_request *freq)
+void abort_http_object_request(struct http_object_request **freq_p)
 {
+	struct http_object_request *freq = *freq_p;
 	unlink_or_warn(freq->tmpfile.buf);
 
-	release_http_object_request(freq);
+	release_http_object_request(freq_p);
 }
 
-void release_http_object_request(struct http_object_request *freq)
+void release_http_object_request(struct http_object_request **freq_p)
 {
+	struct http_object_request *freq = *freq_p;
 	if (freq->localfile != -1) {
 		close(freq->localfile);
 		freq->localfile = -1;
@@ -2837,4 +2860,8 @@ void release_http_object_request(struct http_object_request *freq)
 	}
 	curl_slist_free_all(freq->headers);
 	strbuf_release(&freq->tmpfile);
+	git_inflate_end(&freq->stream);
+
+	free(freq);
+	*freq_p = NULL;
 }

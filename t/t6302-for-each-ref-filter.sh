@@ -2,6 +2,7 @@
 
 test_description='test for-each-refs usage of ref-filter APIs'
 
+TEST_PASSES_SANITIZE_LEAK=true
 . ./test-lib.sh
 . "$TEST_DIRECTORY"/lib-gpg.sh
 
@@ -13,7 +14,7 @@ test_expect_success 'setup some history and refs' '
 	git checkout -b side &&
 	test_commit four &&
 	git tag -m "An annotated tag" annotated-tag &&
-	git tag -m "Annonated doubly" doubly-annotated-tag annotated-tag &&
+	git tag -m "Annotated doubly" doubly-annotated-tag annotated-tag &&
 
 	# Note that these "signed" tags might not actually be signed.
 	# Tests which care about the distinction should be marked
@@ -342,7 +343,7 @@ test_expect_success 'check `%(contents:lines=1)`' '
 	side |four
 	odd/spot |three
 	annotated-tag |An annotated tag
-	doubly-annotated-tag |Annonated doubly
+	doubly-annotated-tag |Annotated doubly
 	doubly-signed-tag |Signed doubly
 	four |four
 	one |one
@@ -378,7 +379,7 @@ test_expect_success 'check `%(contents:lines=99999)`' '
 	side |four
 	odd/spot |three
 	annotated-tag |An annotated tag
-	doubly-annotated-tag |Annonated doubly
+	doubly-annotated-tag |Annotated doubly
 	doubly-signed-tag |Signed doubly
 	four |four
 	one |one

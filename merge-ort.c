@@ -1147,7 +1147,7 @@ static void collect_rename_info(struct merge_options *opt,
 	 * Update dir_rename_mask (determines ignore-rename-source validity)
 	 *
 	 * dir_rename_mask helps us keep track of when directory rename
-	 * detection may be relevant.  Basically, whenver a directory is
+	 * detection may be relevant.  Basically, whenever a directory is
 	 * removed on one side of history, and a file is added to that
 	 * directory on the other side of history, directory rename
 	 * detection is relevant (meaning we have to detect renames for all
@@ -2710,7 +2710,7 @@ static void apply_directory_rename_modifications(struct merge_options *opt,
 		struct conflict_info *dir_ci;
 		char *cur_dir = dirs_to_insert.items[i].string;
 
-		CALLOC_ARRAY(dir_ci, 1);
+		dir_ci = mem_pool_calloc(&opt->priv->pool, 1, sizeof(*dir_ci));
 
 		dir_ci->merged.directory_name = parent_name;
 		len = strlen(parent_name);
@@ -2838,6 +2838,8 @@ static void apply_directory_rename_modifications(struct merge_options *opt,
 	 * Finally, record the new location.
 	 */
 	pair->two->path = new_path;
+
+	string_list_clear(&dirs_to_insert, 0);
 }
 
 /*** Function Grouping: functions related to regular rename detection ***/
@@ -3534,7 +3536,7 @@ simple_cleanup:
 	/* Free memory for renames->pairs[] and combined */
 	for (s = MERGE_SIDE1; s <= MERGE_SIDE2; s++) {
 		free(renames->pairs[s].queue);
-		DIFF_QUEUE_CLEAR(&renames->pairs[s]);
+		diff_queue_init(&renames->pairs[s]);
 	}
 	for (i = 0; i < combined.nr; i++)
 		pool_diff_free_filepair(&opt->priv->pool, combined.queue[i]);
@@ -3835,7 +3837,7 @@ static int write_completed_directory(struct merge_options *opt,
 	 *     	   src/moduleB  2
 	 *
 	 *     which is used to know that xtract.c & token.txt are from the
-	 *     toplevel dirctory, while umm.c & stuff.h & baz.c are from the
+	 *     toplevel directory, while umm.c & stuff.h & baz.c are from the
 	 *     src/moduleB directory.  Again, following the example above,
 	 *     once we need to process src/moduleB, then info->offsets is
 	 *     updated to

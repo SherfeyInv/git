@@ -1,3 +1,4 @@
+#define USE_THE_REPOSITORY_VARIABLE
 #include "builtin.h"
 #include "gettext.h"
 #include "hex.h"
@@ -43,12 +44,16 @@ static void add_sought_entry(struct ref ***sought, int *nr, int *alloc,
 	(*sought)[*nr - 1] = ref;
 }
 
-int cmd_fetch_pack(int argc, const char **argv, const char *prefix UNUSED)
+int cmd_fetch_pack(int argc,
+		   const char **argv,
+		   const char *prefix UNUSED,
+		   struct repository *repo UNUSED)
 {
 	int i, ret;
 	struct ref *fetched_refs = NULL, *remote_refs = NULL;
 	const char *dest = NULL;
 	struct ref **sought = NULL;
+	struct ref **sought_to_free = NULL;
 	int nr_sought = 0, alloc_sought = 0;
 	int fd[2];
 	struct string_list pack_lockfiles = STRING_LIST_INIT_DUP;
@@ -239,6 +244,13 @@ int cmd_fetch_pack(int argc, const char **argv, const char *prefix UNUSED)
 		BUG("unknown protocol version");
 	}
 
+	/*
+	 * Create a shallow copy of `sought` so that we can free all of its entries.
+	 * This is because `fetch_pack()` will modify the array to evict some
+	 * entries, but won't free those.
+	 */
+	DUP_ARRAY(sought_to_free, sought, nr_sought);
+
 	fetched_refs = fetch_pack(&args, fd, remote_refs, sought, nr_sought,
 			 &shallow, pack_lockfiles_ptr, version);
 
@@ -276,9 +288,13 @@ int cmd_fetch_pack(int argc, const char **argv, const char *prefix UNUSED)
 		       oid_to_hex(&ref->old_oid), ref->name);
 
 	for (size_t i = 0; i < nr_sought; i++)
-		free_one_ref(sought[i]);
+		free_one_ref(sought_to_free[i]);
+	free(sought_to_free);
 	free(sought);
 	free_refs(fetched_refs);
 	free_refs(remote_refs);
+	list_objects_filter_release(&args.filter_options);
+	oid_array_clear(&shallow);
+	string_list_clear(&pack_lockfiles, 0);
 	return ret;
 }

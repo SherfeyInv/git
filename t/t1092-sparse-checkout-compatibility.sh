@@ -5,6 +5,7 @@ test_description='compare full workdir to sparse workdir'
 GIT_TEST_SPLIT_INDEX=0
 GIT_TEST_SPARSE_INDEX=
 
+TEST_PASSES_SANITIZE_LEAK=true
 . ./test-lib.sh
 
 test_expect_success 'setup' '
@@ -179,22 +180,26 @@ init_repos_as_submodules () {
 }
 
 run_on_sparse () {
+	cat >run-on-sparse-input &&
+
 	(
 		cd sparse-checkout &&
 		GIT_PROGRESS_DELAY=100000 "$@" >../sparse-checkout-out 2>../sparse-checkout-err
-	) &&
+	) <run-on-sparse-input &&
 	(
 		cd sparse-index &&
 		GIT_PROGRESS_DELAY=100000 "$@" >../sparse-index-out 2>../sparse-index-err
-	)
+	) <run-on-sparse-input
 }
 
 run_on_all () {
+	cat >run-on-all-input &&
+
 	(
 		cd full-checkout &&
 		GIT_PROGRESS_DELAY=100000 "$@" >../full-checkout-out 2>../full-checkout-err
-	) &&
-	run_on_sparse "$@"
+	) <run-on-all-input &&
+	run_on_sparse "$@" <run-on-all-input
 }
 
 test_all_match () {
@@ -221,7 +226,7 @@ test_sparse_unstaged () {
 	done
 }
 
-# Usage: test_sprase_checkout_set "<c1> ... <cN>" "<s1> ... <sM>"
+# Usage: test_sparse_checkout_set "<c1> ... <cN>" "<s1> ... <sM>"
 # Verifies that "git sparse-checkout set <c1> ... <cN>" succeeds and
 # leaves the sparse index in a state where <s1> ... <sM> are sparse
 # directories (and <c1> ... <cN> are not).
@@ -703,7 +708,7 @@ test_expect_success 'reset with wildcard pathspec' '
 	test_all_match git ls-files -s -- deep &&
 
 	# The following `git reset`s result in updating the index on files with
-	# `skip-worktree` enabled. To avoid failing due to discrepencies in reported
+	# `skip-worktree` enabled. To avoid failing due to discrepancies in reported
 	# "modified" files, `test_sparse_match` reset is performed separately from
 	# "full-checkout" reset, then the index contents of all repos are verified.
 
@@ -819,7 +824,7 @@ test_expect_success 'update-index --remove outside sparse definition' '
 	# Reset the state
 	test_all_match git reset --hard &&
 
-	# --force-remove supercedes --ignore-skip-worktree-entries, removing
+	# --force-remove supersedes --ignore-skip-worktree-entries, removing
 	# a skip-worktree file from the index (and disk) when both are specified
 	# with --remove
 	test_sparse_match git update-index --force-remove --ignore-skip-worktree-entries folder1/a &&
@@ -2076,7 +2081,7 @@ test_expect_success 'grep is not expanded' '
 test_expect_failure 'grep within submodules is not expanded' '
 	init_repos_as_submodules &&
 
-	# do not use ensure_not_expanded() here, becasue `grep` should be
+	# do not use ensure_not_expanded() here, because `grep` should be
 	# run in the superproject, not in "./sparse-index"
 	GIT_TRACE2_EVENT="$(pwd)/trace2.txt" \
 	git grep --cached --recurse-submodules a -- "*/folder1/*" &&
@@ -2351,7 +2356,46 @@ test_expect_success 'advice.sparseIndexExpanded' '
 	mkdir -p sparse-index/deep/deeper2/deepest &&
 	touch sparse-index/deep/deeper2/deepest/bogus &&
 	git -C sparse-index status 2>err &&
-	grep "The sparse index is expanding to a full index" err
+	grep "The sparse index is expanding to a full index" err &&
+
+	git -C sparse-index sparse-checkout disable 2>err &&
+	test_line_count = 0 err
+'
+
+test_expect_success 'cat-file -p' '
+	init_repos &&
+	echo "new content" >>full-checkout/deep/a &&
+	echo "new content" >>sparse-checkout/deep/a &&
+	echo "new content" >>sparse-index/deep/a &&
+	run_on_all git add deep/a &&
+
+	test_all_match git cat-file -p :deep/a &&
+	ensure_not_expanded cat-file -p :deep/a &&
+	test_all_match git cat-file -p :folder1/a &&
+	ensure_expanded cat-file -p :folder1/a
+'
+
+test_expect_success 'cat-file --batch' '
+	init_repos &&
+	echo "new content" >>full-checkout/deep/a &&
+	echo "new content" >>sparse-checkout/deep/a &&
+	echo "new content" >>sparse-index/deep/a &&
+	run_on_all git add deep/a &&
+
+	echo ":deep/a" >in &&
+	test_all_match git cat-file --batch <in &&
+	ensure_not_expanded cat-file --batch <in &&
+
+	echo ":folder1/a" >in &&
+	test_all_match git cat-file --batch <in &&
+	ensure_expanded cat-file --batch <in &&
+
+	cat >in <<-\EOF &&
+	:deep/a
+	:folder1/a
+	EOF
+	test_all_match git cat-file --batch <in &&
+	ensure_expanded cat-file --batch <in
 '
 
 test_done

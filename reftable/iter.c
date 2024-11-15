@@ -55,7 +55,7 @@ void iterator_set_empty(struct reftable_iterator *it)
 static void filtering_ref_iterator_close(void *iter_arg)
 {
 	struct filtering_ref_iterator *fri = iter_arg;
-	strbuf_release(&fri->oid);
+	reftable_buf_release(&fri->oid);
 	reftable_iterator_destroy(&fri->it);
 }
 
@@ -115,7 +115,7 @@ static void indexed_table_ref_iter_close(void *p)
 	block_iter_close(&it->cur);
 	reftable_block_done(&it->block_reader.block);
 	reftable_free(it->offsets);
-	strbuf_release(&it->oid);
+	reftable_buf_release(&it->oid);
 }
 
 static int indexed_table_ref_iter_next_block(struct indexed_table_ref_iter *it)
@@ -181,26 +181,41 @@ static int indexed_table_ref_iter_next(void *p, struct reftable_record *rec)
 	}
 }
 
-int new_indexed_table_ref_iter(struct indexed_table_ref_iter **dest,
+int indexed_table_ref_iter_new(struct indexed_table_ref_iter **dest,
 			       struct reftable_reader *r, uint8_t *oid,
 			       int oid_len, uint64_t *offsets, int offset_len)
 {
 	struct indexed_table_ref_iter empty = INDEXED_TABLE_REF_ITER_INIT;
-	struct indexed_table_ref_iter *itr = reftable_calloc(1, sizeof(*itr));
+	struct indexed_table_ref_iter *itr;
 	int err = 0;
+
+	itr = reftable_calloc(1, sizeof(*itr));
+	if (!itr) {
+		err = REFTABLE_OUT_OF_MEMORY_ERROR;
+		goto out;
+	}
 
 	*itr = empty;
 	itr->r = r;
-	strbuf_add(&itr->oid, oid, oid_len);
+
+	err = reftable_buf_add(&itr->oid, oid, oid_len);
+	if (err < 0)
+		goto out;
 
 	itr->offsets = offsets;
 	itr->offset_len = offset_len;
 
 	err = indexed_table_ref_iter_next_block(itr);
+	if (err < 0)
+		goto out;
+
+	*dest = itr;
+	err = 0;
+
+out:
 	if (err < 0) {
+		*dest = NULL;
 		reftable_free(itr);
-	} else {
-		*dest = itr;
 	}
 	return err;
 }
@@ -225,7 +240,7 @@ void reftable_iterator_destroy(struct reftable_iterator *it)
 		return;
 	it->ops->close(it->iter_arg);
 	it->ops = NULL;
-	FREE_AND_NULL(it->iter_arg);
+	REFTABLE_FREE_AND_NULL(it->iter_arg);
 }
 
 int reftable_iterator_seek_ref(struct reftable_iterator *it,

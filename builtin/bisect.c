@@ -1,3 +1,4 @@
+#define USE_THE_REPOSITORY_VARIABLE
 #include "builtin.h"
 #include "copy.h"
 #include "environment.h"
@@ -583,7 +584,7 @@ static int prepare_revs(struct bisect_terms *terms, struct rev_info *revs)
 	refs_for_each_glob_ref_in(get_main_ref_store(the_repository),
 				  add_bisect_ref, good, "refs/bisect/", &cb);
 	if (prepare_revision_walk(revs))
-		res = error(_("revision walk setup failed\n"));
+		res = error(_("revision walk setup failed"));
 
 	free(good);
 	free(bad);
@@ -1108,7 +1109,7 @@ static enum bisect_error bisect_skip(struct bisect_terms *terms, int argc,
 			setup_revisions(2, argv + i - 1, &revs, NULL);
 
 			if (prepare_revision_walk(&revs))
-				die(_("revision walk setup failed\n"));
+				die(_("revision walk setup failed"));
 			while ((commit = get_revision(&revs)) != NULL)
 				strvec_push(&argv_state,
 						oid_to_hex(&commit->object.oid));
@@ -1411,7 +1412,10 @@ static int cmd_bisect__run(int argc, const char **argv, const char *prefix UNUSE
 	return res;
 }
 
-int cmd_bisect(int argc, const char **argv, const char *prefix)
+int cmd_bisect(int argc,
+	       const char **argv,
+	       const char *prefix,
+	       struct repository *repo UNUSED)
 {
 	int res = 0;
 	parse_opt_subcommand_fn *fn = NULL;

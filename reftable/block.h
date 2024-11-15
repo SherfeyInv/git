@@ -38,15 +38,15 @@ struct block_writer {
 	uint32_t restart_len;
 	uint32_t restart_cap;
 
-	struct strbuf last_key;
+	struct reftable_buf last_key;
 	int entries;
 };
 
 /*
  * initializes the blockwriter to write `typ` entries, using `buf` as temporary
  * storage. `buf` is not owned by the block_writer. */
-void block_writer_init(struct block_writer *bw, uint8_t typ, uint8_t *buf,
-		       uint32_t block_size, uint32_t header_off, int hash_size);
+int block_writer_init(struct block_writer *bw, uint8_t typ, uint8_t *buf,
+		      uint32_t block_size, uint32_t header_off, int hash_size);
 
 /* returns the block type (eg. 'r' for ref records. */
 uint8_t block_writer_type(struct block_writer *bw);
@@ -98,7 +98,7 @@ void block_reader_release(struct block_reader *br);
 uint8_t block_reader_type(const struct block_reader *r);
 
 /* Decodes the first key in the block */
-int block_reader_first_key(const struct block_reader *br, struct strbuf *key);
+int block_reader_first_key(const struct block_reader *br, struct reftable_buf *key);
 
 /* Iterate over entries in a block */
 struct block_iter {
@@ -109,13 +109,13 @@ struct block_iter {
 	int hash_size;
 
 	/* key for last entry we read. */
-	struct strbuf last_key;
-	struct strbuf scratch;
+	struct reftable_buf last_key;
+	struct reftable_buf scratch;
 };
 
 #define BLOCK_ITER_INIT { \
-	.last_key = STRBUF_INIT, \
-	.scratch = STRBUF_INIT, \
+	.last_key = REFTABLE_BUF_INIT, \
+	.scratch = REFTABLE_BUF_INIT, \
 }
 
 /* Position `it` at start of the block */
@@ -123,7 +123,7 @@ void block_iter_seek_start(struct block_iter *it, const struct block_reader *br)
 
 /* Position `it` to the `want` key in the block */
 int block_iter_seek_key(struct block_iter *it, const struct block_reader *br,
-			struct strbuf *want);
+			struct reftable_buf *want);
 
 /* return < 0 for error, 0 for OK, > 0 for EOF. */
 int block_iter_next(struct block_iter *it, struct reftable_record *rec);

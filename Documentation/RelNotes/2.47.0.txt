@@ -55,6 +55,18 @@ UI, Workflows & Features
 
  * "git pack-redundant" has been marked for removal in Git 3.0.
 
+ * One-line messages to "die" and other helper functions will get LF
+   added by these helper functions, but many existing messages had an
+   unnecessary LF at the end, which have been corrected.
+
+ * The "scalar clone" command learned the "--no-tags" option.
+
+ * The environment GIT_ADVICE has been intentionally kept undocumented
+   to discourage its use by interactive users.  Add documentation to
+   help tool writers.
+
+ * "git apply --3way" learned to take "--ours" and other options.
+
 
 Performance, Internal Implementation, Development Support etc.
 --------------------------------------------------------------
@@ -121,6 +133,40 @@ Performance, Internal Implementation, Development Support etc.
  * Make our codebase compilable with the -Werror=unused-parameter
    option.
 
+ * "git cat-file" works well with the sparse-index, and gets marked as
+   such.
+
+ * CI started failing completely for linux32 jobs, as the step to
+   upload failed test directory uses GitHub actions that is deprecated
+   and is now disabled.
+
+ * Import clar unit tests framework libgit2 folks invented for our
+   use.
+
+ * The error messages from the test script checker have been improved.
+
+ * The convention to calling into built-in command implementation has
+   been updated to pass the repository, if known, together with the
+   prefix value.
+
+ * "git apply" had custom buffer management code that predated before
+   use of strbuf got widespread, which has been updated to use strbuf,
+   which also plugged some memory leaks.
+
+ * The reftable backend learned to more efficiently handle exclude
+   patterns while enumerating the refs.
+
+ * CI updates.  FreeBSD image has been updated to 13.4.
+   (merge 2eeb29702e cb/ci-freebsd-13-4 later to maint).
+
+ * Give timeout to the locking code to write to reftable, instead of
+   failing on the first failure without retrying.
+
+ * The checksum at the tail of files are now computed without
+   collision detection protection.  This is safe as the consumer of
+   the information to protect itself from replay attacks checks for
+   hash collisions independently.
+
 
 Fixes since v2.46
 -----------------
@@ -150,7 +196,6 @@ Fixes since v2.46
    corrected.
 
  * More leakfixes.
-   (merge f30bfafcd4 ps/leakfixes-part-3 later to maint).
 
  * The credential helper to talk to OSX keychain sometimes sent
    garbage bytes after the username, which has been corrected.
@@ -160,7 +205,6 @@ Fixes since v2.46
 
  * The patch parser in 'git apply' has been a bit more lenient against
    unexpected mode bits, like 100664, recorded on extended header lines.
-   (merge e95d515141 jk/apply-patch-mode-check-fix later to maint).
 
  * "git config --value=foo --fixed-value section.key newvalue" barfed
    when the existing value in the configuration file used the
@@ -169,7 +213,6 @@ Fixes since v2.46
  * The patch parser in "git patch-id" has been tightened to avoid
    getting confused by lines that look like a patch header in the log
    message.
-   (merge a6e9429f72 jc/patch-id later to maint).
 
  * "git reflog expire" failed to honor annotated tags when computing
    reachable commits.
@@ -185,7 +228,6 @@ Fixes since v2.46
 
  * "git bundle unbundle" outside a repository triggered a BUG()
    unnecessarily, which has been corrected.
-   (merge 96a9a3e42e ps/bundle-outside-repo-fix later to maint).
 
  * Maintenance tasks other than "gc" now properly go background when
    "git maintenance" runs them.
@@ -203,16 +245,98 @@ Fixes since v2.46
  * The code forgot to discard unnecessary in-core commit buffer data
    for commits that "git log --skip=<number>" traversed but omitted
    from the output, which has been corrected.
-   (merge 6bd2ae67a5 jk/free-commit-buffer-of-skipped-commits later to maint).
+
+ * "git verify-pack" and "git index-pack" started dying outside a
+   repository, which has been corrected.
+
+ * A data corruption bug when multi-pack-index is used and the same
+   objects are stored in multiple packfiles has been corrected.
+
+ * "git pack-refs --auto" for the files backend was too aggressive,
+   which has been a bit tamed.
+   (merge c3459ae9ef ps/pack-refs-auto-heuristics later to maint).
+
+ * A file descriptor left open is now properly closed when "git
+   sparse-checkout" updates the sparse patterns.
+
+ * In a few corner cases "git diff --exit-code" failed to report
+   "changes" (e.g., renamed without any content change), which has
+   been corrected.
+
+ * Cygwin does have /dev/tty support that is needed by things like
+   single-key input mode.
+
+ * The interpret-trailers command failed to recognise the end of the
+   message when the commit log ends in an incomplete line.
+
+ * "git rebase --autostash" failed to resurrect the autostashed
+   changes when the command gets aborted after giving back control
+   asking for hlep in conflict resolution.
+   (merge bf6ab087d1 pw/rebase-autostash-fix later to maint).
+
+ * The "imap-send" now allows to be compiled with NO_OPENSSL and
+   OPENSSL_SHA1 defined together.
+   (merge 997950a750 jk/no-openssl-with-openssl-sha1 later to maint).
+
+ * The support to customize build options to adjust for older versions
+   and/or older systems for the interop tests has been improved.
+   (merge 22ef5f02a8 jk/interop-test-build-options later to maint).
+
+ * Update the character width table for Unicode 16.
+   (merge 44dc651132 bb/unicode-width-table-16 later to maint).
+
+ * In Git 2.39, Git.pm stopped working in a bare repository, which has
+   been corrected.
+   (merge d3edb0bdde jk/git-pm-bare-repo-fix later to maint).
+
+ * When a remote-helper dies before Git writes to it, SIGPIPE killed
+   Git silently.  We now explain the situation a bit better to the end
+   user in our error message.
+   (merge 6e7fac9bca jk/diag-unexpected-remote-helper-death later to maint).
+
+ * A few usability fixes to "git jump" (in contrib/).
+   (merge 083b82544d jk/jump-quickfix-fixes later to maint).
+
+ * "git diff --exit-code" ignored modified binary files, which has
+   been corrected.
+   (merge 9a41735af6 rs/diff-exit-code-binary later to maint).
+
+ * When a subprocess to work in a submodule spawned by "git submodule"
+   fails with SIGPIPE, the parent Git process caught the death of it,
+   but gave a generic "failed to work in that submodule", which was
+   misleading.  We now behave as if the parent got SIGPIPE and die.
+   (merge 082caf527e pw/submodule-process-sigpipe later to maint).
+
+ * "git archive" with pathspec magic that uses the attribute
+   information did not work well, which has been corrected.
+   (merge 296743a7ca rs/archive-with-attr-pathspec-fix later to maint).
+
+ * Background tasks "git maintenance" runs may need to use credential
+   information when going over the network, but a credential helper
+   may work only in an interactive environment, and end up blocking a
+   scheduled task waiting for UI.  Credential helpers can now behave
+   differently when they are not running interactively.
+   (merge b9183b0a02 ds/background-maintenance-with-credential later to maint).
+
+ * "git --git-dir=nowhere cmd" failed to properly notice that it
+   wasn't in any repository while processing includeIf.onbranch
+   configuration and instead crashed.
+
+ * When "git sparse-checkout disable" turns a sparse checkout into a
+   regular checkout, the index is fully expanded.  This totally
+   expected behaviour however had an "oops, we are expanding the
+   index" advice message, which has been corrected.
+   (merge 537e516a39 ds/sparse-checkout-expansion-advice later to maint).
+
+ * macOS with fsmonitor daemon can hang forever when a submodule is
+   involved, which has been corrected.
 
  * Other code cleanup, docfix, build fix, etc.
-   (merge bb0498b1bb jc/how-to-maintain-updates later to maint).
-   (merge 0d66f601a9 jc/tests-no-useless-tee later to maint).
-   (merge 170cdfc5a4 jc/grammo-fixes later to maint).
-   (merge 983555a1f2 jc/how-to-maintain-updates later to maint).
-   (merge e3209bd4df ps/stash-keep-untrack-empty-fix later to maint).
-   (merge 44db6f75cc jc/coding-style-c-operator-with-spaces later to maint).
-   (merge 596f4ff6ad cl/config-regexp-docfix later to maint).
-   (merge 4881328617 aa/cat-file-batch-output-doc later to maint).
-   (merge 1609470409 jc/config-doc-update later to maint).
-   (merge d4dc0efd7d rj/compat-terminal-unused-fix later to maint).
+   (merge be10ac7037 jc/mailinfo-header-cleanup later to maint).
+   (merge 4460e052e0 jc/range-diff-lazy-setup later to maint).
+   (merge 0627c58e7a ak/typofixes later to maint).
+   (merge 83799f1500 jk/t9001-deflake later to maint).
+   (merge e02cc08a88 ak/typofix-2.46-maint later to maint).
+   (merge 5c5d29e1c4 ps/ci-gitlab-upgrade later to maint).
+   (merge 9c4c840901 jc/doc-discarding-stalled-topics later to maint).
+   (merge 5e6f359f6b ds/read-cache-mempool-leakfix later to maint).

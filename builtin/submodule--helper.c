@@ -1,9 +1,10 @@
+#define USE_THE_REPOSITORY_VARIABLE
 #include "builtin.h"
 #include "abspath.h"
 #include "environment.h"
 #include "gettext.h"
 #include "hex.h"
-#include "repository.h"
+
 #include "config.h"
 #include "parse-options.h"
 #include "quote.h"
@@ -363,9 +364,13 @@ static void runcommand_in_submodule_cb(const struct cache_entry *list_item,
 	if (!info->quiet)
 		printf(_("Entering '%s'\n"), displaypath);
 
-	if (info->argv[0] && run_command(&cp))
-		die(_("run_command returned non-zero status for %s\n."),
-			displaypath);
+	if (info->argv[0]) {
+		if (run_command(&cp))
+			die(_("run_command returned non-zero status for %s\n."),
+			    displaypath);
+	} else {
+		child_process_clear(&cp);
+	}
 
 	if (info->recursive) {
 		struct child_process cpr = CHILD_PROCESS_INIT;
@@ -672,7 +677,7 @@ static void status_submodule(const char *path, const struct object_id *ce_oid,
 	setup_revisions(diff_files_args.nr, diff_files_args.v, &rev, &opt);
 	run_diff_files(&rev, 0);
 
-	if (!diff_result_code(&rev.diffopt)) {
+	if (!diff_result_code(&rev)) {
 		print_status(flags, ' ', path, ce_oid,
 			     displaypath);
 	} else if (!(flags & OPT_CACHED)) {
@@ -695,6 +700,7 @@ static void status_submodule(const char *path, const struct object_id *ce_oid,
 
 	if (flags & OPT_RECURSIVE) {
 		struct child_process cpr = CHILD_PROCESS_INIT;
+		int res;
 
 		cpr.git_cmd = 1;
 		cpr.dir = path;
@@ -710,7 +716,10 @@ static void status_submodule(const char *path, const struct object_id *ce_oid,
 		if (flags & OPT_QUIET)
 			strvec_push(&cpr.args, "--quiet");
 
-		if (run_command(&cpr))
+		res = run_command(&cpr);
+		if (res == SIGPIPE + 128)
+			raise(SIGPIPE);
+		else if (res)
 			die(_("failed to recurse into submodule '%s'"), path);
 	}
 
@@ -917,7 +926,7 @@ static void generate_submodule_summary(struct summary_cb *info,
 		} else {
 			/* for a submodule removal (mode:0000000), don't warn */
 			if (p->mod_dst)
-				warning(_("unexpected mode %o\n"), p->mod_dst);
+				warning(_("unexpected mode %o"), p->mod_dst);
 		}
 	}
 
@@ -1617,6 +1626,8 @@ static int add_possible_reference_from_superproject(
 				; /* nothing */
 			}
 		}
+
+		strbuf_release(&err);
 		strbuf_release(&sb);
 	}
 
@@ -1709,7 +1720,7 @@ static int clone_submodule(const struct module_clone_data *clone_data,
 		exit(128);
 
 	if (!is_absolute_path(clone_data->path))
-		clone_data_path = to_free = xstrfmt("%s/%s", get_git_work_tree(),
+		clone_data_path = to_free = xstrfmt("%s/%s", repo_get_work_tree(the_repository),
 						    clone_data->path);
 
 	if (validate_submodule_git_dir(sm_gitdir, clone_data->name) < 0)
@@ -2021,6 +2032,7 @@ struct update_data {
 static void update_data_release(struct update_data *ud)
 {
 	free(ud->displaypath);
+	submodule_update_strategy_release(&ud->update_strategy);
 	module_list_release(&ud->list);
 }
 
@@ -2321,7 +2333,14 @@ static int fetch_in_submodule(const char *module_path, int depth, int quiet,
 		strvec_pushf(&cp.args, "--depth=%d", depth);
 	if (oid) {
 		char *hex = oid_to_hex(oid);
-		char *remote = get_default_remote();
+		char *remote;
+		int code;
+
+		code = get_default_remote_submodule(module_path, &remote);
+		if (code) {
+			child_process_clear(&cp);
+			return code;
+		}
 
 		strvec_pushl(&cp.args, remote, hex, NULL);
 		free(remote);
@@ -2641,15 +2660,20 @@ static int update_submodule(struct update_data *update_data)
 
 		if (!update_data->nofetch) {
 			if (fetch_in_submodule(update_data->sm_path, update_data->depth,
-					      0, NULL))
+					      0, NULL)) {
+				free(remote_ref);
 				return die_message(_("Unable to fetch in submodule path '%s'"),
 						   update_data->sm_path);
+			}
 		}
 
 		if (repo_resolve_gitlink_ref(the_repository, update_data->sm_path,
-					     remote_ref, &update_data->oid))
-			return die_message(_("Unable to find %s revision in submodule path '%s'"),
-					   remote_ref, update_data->sm_path);
+					     remote_ref, &update_data->oid)) {
+			ret = die_message(_("Unable to find %s revision in submodule path '%s'"),
+					  remote_ref, update_data->sm_path);
+			free(remote_ref);
+			return ret;
+		}
 
 		free(remote_ref);
 	}
@@ -2958,7 +2982,9 @@ static int push_check(int argc, const char **argv, const char *prefix UNUSED)
 				    rs->src);
 			}
 		}
+
 		refspec_clear(&refspec);
+		free_refs(local_refs);
 	}
 	free(head);
 
@@ -3528,7 +3554,10 @@ cleanup:
 	return ret;
 }
 
-int cmd_submodule__helper(int argc, const char **argv, const char *prefix)
+int cmd_submodule__helper(int argc,
+			  const char **argv,
+			  const char *prefix,
+			  struct repository *repo UNUSED)
 {
 	parse_opt_subcommand_fn *fn = NULL;
 	const char *const usage[] = {

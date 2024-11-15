@@ -8,6 +8,7 @@ test_description='Testing multi_ack pack fetching'
 GIT_TEST_DEFAULT_INITIAL_BRANCH_NAME=main
 export GIT_TEST_DEFAULT_INITIAL_BRANCH_NAME
 
+TEST_PASSES_SANITIZE_LEAK=true
 . ./test-lib.sh
 
 # Test fetch-pack/upload-pack pair.
@@ -417,7 +418,7 @@ test_expect_success 'in_vain not triggered before first ACK' '
 	test_grep "remote: Total 3 " log
 '
 
-test_expect_success 'in_vain resetted upon ACK' '
+test_expect_success 'in_vain reset upon ACK' '
 	test_when_finished rm -f log trace2 &&
 	rm -rf myserver myclient &&
 	git init myserver &&
@@ -773,7 +774,7 @@ do
 	# file with scheme
 	for p in file
 	do
-		test_expect_success !MINGW "fetch-pack --diag-url $p://$h/$r" '
+		test_expect_success !WINDOWS "fetch-pack --diag-url $p://$h/$r" '
 			check_prot_path $p://$h/$r $p "/$r"
 		'
 		test_expect_success MINGW "fetch-pack --diag-url $p://$h/$r" '
@@ -783,7 +784,7 @@ do
 			check_prot_path $p:///$r $p "/$r"
 		'
 		# No "/~" -> "~" conversion for file
-		test_expect_success !MINGW "fetch-pack --diag-url $p://$h/~$r" '
+		test_expect_success !WINDOWS "fetch-pack --diag-url $p://$h/~$r" '
 			check_prot_path $p://$h/~$r $p "/~$r"
 		'
 		test_expect_success MINGW "fetch-pack --diag-url $p://$h/~$r" '
@@ -805,11 +806,17 @@ do
 	p=ssh
 	for h in host [::1]
 	do
-		test_expect_success "fetch-pack --diag-url $h:$r" '
+		expectation="success"
+		if test_have_prereq CYGWIN && test "$h" = "[::1]"
+		then
+			expectation="failure"
+		fi
+
+		test_expect_$expectation "fetch-pack --diag-url $h:$r" '
 			check_prot_host_port_path $h:$r $p "$h" NONE "$r"
 		'
 		# Do "/~" -> "~" conversion
-		test_expect_success "fetch-pack --diag-url $h:/~$r" '
+		test_expect_$expectation "fetch-pack --diag-url $h:/~$r" '
 			check_prot_host_port_path $h:/~$r $p "$h" NONE "~$r"
 		'
 	done
@@ -917,6 +924,13 @@ test_expect_success 'fetch exclude tag one' '
 	git -C shallow12 log --pretty=tformat:%s origin/main >actual &&
 	test_write_lines three two >expected &&
 	test_cmp expected actual
+'
+
+test_expect_success 'fetch exclude tag one as revision' '
+	test_when_finished rm -f rev err &&
+	git -C shallow-exclude rev-parse one >rev &&
+	test_must_fail git -C shallow12 fetch --shallow-exclude $(cat rev) origin 2>err &&
+	grep "deepen-not is not a ref:" err
 '
 
 test_expect_success 'fetching deepen' '
